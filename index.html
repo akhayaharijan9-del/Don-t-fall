@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>DON'T FALL</title>
+
+<style>
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#07080c;
+  font-family:Arial,sans-serif;
+  color:white;
+}
+
+#game{
+  position:relative;
+  width:100%;
+  height:100%;
+  max-width:520px;
+  margin:auto;
+  overflow:hidden;
+  background:#0b0d15;
+}
+
+canvas{
+  width:100%;
+  height:100%;
+  display:block;
+}
+
+#hud{
+  position:absolute;
+  top:18px;
+  left:18px;
+  right:18px;
+  display:flex;
+  justify-content:space-between;
+  pointer-events:none;
+}
+
+.box{
+  background:rgba(0,0,0,.45);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:14px;
+  padding:8px 14px;
+  backdrop-filter:blur(8px);
+}
+
+.small{
+  display:block;
+  font-size:10px;
+  opacity:.55;
+  margin-bottom:3px;
+}
+
+#tip{
+  position:absolute;
+  bottom:25px;
+  left:0;
+  right:0;
+  text-align:center;
+  font-size:13px;
+  opacity:.55;
+  pointer-events:none;
+}
+
+#overlay{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.68);
+  backdrop-filter:blur(6px);
+}
+
+.card{
+  width:82%;
+  padding:30px 20px;
+  text-align:center;
+  border-radius:24px;
+  background:#141620;
+  border:1px solid rgba(255,255,255,.15);
+}
+
+h1{
+  margin:0 0 10px;
+  font-size:34px;
+  letter-spacing:3px;
+}
+
+p{
+  opacity:.6;
+  margin-bottom:24px;
+}
+
+button{
+  border:0;
+  border-radius:14px;
+  padding:14px 26px;
+  font-weight:bold;
+  font-size:16px;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div id="game">
+
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div class="box">
+    <span class="small">SCORE</span>
+    <span id="score">0</span>
+  </div>
+
+  <div class="box">
+    <span class="small">BEST</span>
+    <span id="best">0</span>
+  </div>
+</div>
+
+<div id="tip">TAP / SPACE = JUMP</div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>GAME OVER</h1>
+    <p id="finalScore">Score: 0</p>
+    <button id="restart">PLAY AGAIN</button>
+  </div>
+</div>
+
+</div>
+
+<script>
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const scoreText = document.getElementById("score");
+const bestText = document.getElementById("best");
+const overlay = document.getElementById("overlay");
+const finalScore = document.getElementById("finalScore");
+const tip = document.getElementById("tip");
+
+let W,H;
+let groundY;
+
+let playing = false;
+let score = 0;
+let best = Number(localStorage.getItem("dontFallBest")) || 0;
+
+let speed = 4.2;
+let spawnTimer = 0;
+
+let obstacles = [];
+
+const player = {
+  x:0,
+  y:0,
+  width:30,
+  height:42,
+  velocityY:0,
+  onGround:true
+};
+
+bestText.textContent = best;
+
+
+/* RESIZE */
+
+function resize(){
+
+  const ratio = window.devicePixelRatio || 1;
+
+  W = canvas.clientWidth;
+  H = canvas.clientHeight;
+
+  canvas.width = W * ratio;
+  canvas.height = H * ratio;
+
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+
+  groundY = H * 0.78;
+
+  player.x = W * 0.20;
+
+  if(!playing){
+    player.y = groundY - player.height;
+  }
+}
+
+window.addEventListener("resize",resize);
+
+resize();
+
+
+/* START */
+
+function startGame(){
+
+  playing = true;
+
+  score = 0;
+  speed = 4.2;
+  spawnTimer = 50;
+
+  obstacles = [];
+
+  player.y = groundY - player.height;
+  player.velocityY = 0;
+  player.onGround = true;
+
+  overlay.style.display = "none";
+  tip.style.display = "block";
+
+  requestAnimationFrame(gameLoop);
+}
+
+
+/* JUMP */
+
+function jump(){
+
+  if(!playing){
+    startGame();
+    return;
+  }
+
+  if(player.onGround){
+
+    player.velocityY = -12.5;
+    player.onGround = false;
+
+    tip.style.display = "none";
+  }
+}
+
+
+/* GAME OVER */
+
+function gameOver(){
+
+  playing = false;
+
+  const current = Math.floor(score);
+
+  if(current > best){
+
+    best = current;
+
+    localStorage.setItem(
+      "dontFallBest",
+      best
+    );
+
+  }
+
+  bestText.textContent = best;
+
+  finalScore.textContent =
+    "Score: " + current;
+
+  overlay.style.display = "flex";
+}
+
+
+/* CREATE OBSTACLE */
+
+function createObstacle(){
+
+  const height =
+    25 + Math.random() * 40;
+
+  const width =
+    18 + Math.random() * 20;
+
+  obstacles.push({
+
+    x:W + 30,
+
+    y:groundY - height,
+
+    width:width,
+
+    height:height
+
+  });
+
+}
+
+
+/* COLLISION */
+
+function collision(a,b){
+
+  return (
+
+    a.x + 5 < b.x + b.width - 3 &&
+
+    a.x + a.width - 5 > b.x + 3 &&
+
+    a.y + 5 < b.y + b.height &&
+
+    a.y + a.height > b.y + 3
+
+  );
+
+}
+
+
+/* BACKGROUND */
+
+function drawBackground(time){
+
+  const gradient =
+    ctx.createLinearGradient(
+      0,0,0,H
+    );
+
+  gradient.addColorStop(
+    0,
+    "#11152a"
+  );
+
+  gradient.addColorStop(
+    1,
+    "#050609"
+  );
+
+  ctx.fillStyle = gradient;
+
+  ctx.fillRect(
+    0,
+    0,
+    W,
+    H
+  );
+
+
+  /* Background lines */
+
+  ctx.fillStyle =
+    "rgba(255,255,255,.035)";
+
+  for(let i=0;i<20;i++){
+
+    let x =
+      (i*100 - time*.02) % W;
+
+    if(x < 0) x += W;
+
+    ctx.fillRect(
+      x,
+      0,
+      1,
+      H*.65
+    );
+  }
+
+
+  /* Ground */
+
+  ctx.fillStyle="#10131b";
+
+  ctx.fillRect(
+    0,
+    groundY,
+    W,
+    H-groundY
+  );
+
+
+  /* Ground line */
+
+  ctx.strokeStyle =
+    "rgba(255,255,255,.12)";
+
+  ctx.lineWidth=2;
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    0,
+    groundY
+  );
+
+  ctx.lineTo(
+    W,
+    groundY
+  );
+
+  ctx.stroke();
+
+
+  /* Ground details */
+
+  for(
+    let x=-(time*.12%60);
+    x<W;
+    x+=60
+  ){
+
+    ctx.fillStyle =
+      "rgba(255,255,255,.035)";
+
+    ctx.fillRect(
+      x,
+      groundY+18,
+      30,
+      2
+    );
+  }
+
+}
+
+
+/* PLAYER */
+
+function drawPlayer(){
+
+  /* shadow */
+
+  ctx.fillStyle =
+    "rgba(0,0,0,.4)";
+
+  ctx.beginPath();
+
+  ctx.ellipse(
+    player.x+15,
+    groundY+4,
+    22,
+    5,
+    0,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* body */
+
+  ctx.fillStyle="#ffffff";
+
+  ctx.beginPath();
+
+  ctx.roundRect(
+    player.x,
+    player.y,
+    player.width,
+    player.height,
+    9
+  );
+
+  ctx.fill();
+
+
+  /* eyes */
+
+  ctx.fillStyle="#11131a";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    player.x+10,
+    player.y+13,
+    3,
+    0,
+    Math.PI*2
+  );
+
+  ctx.arc(
+    player.x+21,
+    player.y+13,
+    3,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* smile */
+
+  ctx.strokeStyle="#11131a";
+
+  ctx.lineWidth=2;
+
+  ctx.beginPath();
+
+  ctx.arc(
+    player.x+15,
+    player.y+20,
+    6,
+    0,
+    Math.PI
+  );
+
+  ctx.stroke();
+
+}
+
+
+/* OBSTACLE */
+
+function drawObstacle(o){
+
+  ctx.fillStyle="#c5c9d4";
+
+  ctx.beginPath();
+
+  ctx.roundRect(
+    o.x,
+    o.y,
+    o.width,
+    o.height,
+    5
+  );
+
+  ctx.fill();
+
+
+  /* spike */
+
+  ctx.fillStyle="#777d8c";
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    o.x,
+    o.y
+  );
+
+  ctx.lineTo(
+    o.x + o.width/2,
+    o.y - 9
+  );
+
+  ctx.lineTo(
+    o.x + o.width,
+    o.y
+  );
+
+  ctx.fill();
+
+}
+
+
+/* GAME LOOP */
+
+function gameLoop(time){
+
+  if(!playing) return;
+
+
+  drawBackground(time);
+
+
+  /* Increase difficulty */
+
+  speed =
+    Math.min(
+      9,
+      4.2 + score/450
+    );
+
+
+  score += 0.08;
+
+  scoreText.textContent =
+    Math.floor(score);
+
+
+  /* Player physics */
+
+  player.velocityY += 0.62;
+
+  player.y += player.velocityY;
+
+
+  if(
+    player.y + player.height >= groundY
+  ){
+
+    player.y =
+      groundY - player.height;
+
+    player.velocityY = 0;
+
+    player.onGround = true;
+
+  }
+
+
+  /* Spawn */
+
+  spawnTimer--;
+
+  if(spawnTimer <= 0){
+
+    createObstacle();
+
+    spawnTimer =
+      55 +
+      Math.random()*60 -
+      speed*2;
+
+  }
+
+
+  /* Obstacles */
+
+  for(
+    let i=obstacles.length-1;
+    i>=0;
+    i--
+  ){
+
+    const obstacle =
+      obstacles[i];
+
+    obstacle.x -= speed;
+
+    drawObstacle(obstacle);
+
+
+    if(
+      collision(
+        player,
+        obstacle
+      )
+    ){
+
+      gameOver();
+
+      return;
+
+    }
+
+
+    if(
+      obstacle.x +
+      obstacle.width <
+      0
+    ){
+
+      obstacles.splice(i,1);
+
+    }
+
+  }
+
+
+  drawPlayer();
+
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+
+/* CONTROLS */
+
+window.addEventListener(
+  "pointerdown",
+  function(e){
+
+    if(
+      e.target.closest("button")
+    ) return;
+
+    jump();
+
+  }
+);
+
+
+window.addEventListener(
+  "keydown",
+  function(e){
+
+    if(
+      e.code === "Space" ||
+      e.code === "ArrowUp"
+    ){
+
+      e.preventDefault();
+
+      jump();
+
+    }
+
+  }
+);
+
+
+document
+.getElementById("restart")
+.addEventListener(
+  "click",
+  startGame
+);
+
+
+/* START */
+
+startGame();
+
+</script>
+
+</body>
+  </html><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>DON'T FALL</title>
+
+<style>
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#07080c;
+  font-family:Arial,sans-serif;
+  color:white;
+}
+
+#game{
+  position:relative;
+  width:100%;
+  height:100%;
+  max-width:520px;
+  margin:auto;
+  overflow:hidden;
+  background:#0b0d15;
+}
+
+canvas{
+  width:100%;
+  height:100%;
+  display:block;
+}
+
+#hud{
+  position:absolute;
+  top:18px;
+  left:18px;
+  right:18px;
+  display:flex;
+  justify-content:space-between;
+  pointer-events:none;
+}
+
+.box{
+  background:rgba(0,0,0,.45);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:14px;
+  padding:8px 14px;
+  backdrop-filter:blur(8px);
+}
+
+.small{
+  display:block;
+  font-size:10px;
+  opacity:.55;
+  margin-bottom:3px;
+}
+
+#tip{
+  position:absolute;
+  bottom:25px;
+  left:0;
+  right:0;
+  text-align:center;
+  font-size:13px;
+  opacity:.55;
+  pointer-events:none;
+}
+
+#overlay{
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.68);
+  backdrop-filter:blur(6px);
+}
+
+.card{
+  width:82%;
+  padding:30px 20px;
+  text-align:center;
+  border-radius:24px;
+  background:#141620;
+  border:1px solid rgba(255,255,255,.15);
+}
+
+h1{
+  margin:0 0 10px;
+  font-size:34px;
+  letter-spacing:3px;
+}
+
+p{
+  opacity:.6;
+  margin-bottom:24px;
+}
+
+button{
+  border:0;
+  border-radius:14px;
+  padding:14px 26px;
+  font-weight:bold;
+  font-size:16px;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div id="game">
+
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div class="box">
+    <span class="small">SCORE</span>
+    <span id="score">0</span>
+  </div>
+
+  <div class="box">
+    <span class="small">BEST</span>
+    <span id="best">0</span>
+  </div>
+</div>
+
+<div id="tip">TAP / SPACE = JUMP</div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>GAME OVER</h1>
+    <p id="finalScore">Score: 0</p>
+    <button id="restart">PLAY AGAIN</button>
+  </div>
+</div>
+
+</div>
+
+<script>
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const scoreText = document.getElementById("score");
+const bestText = document.getElementById("best");
+const overlay = document.getElementById("overlay");
+const finalScore = document.getElementById("finalScore");
+const tip = document.getElementById("tip");
+
+let W,H;
+let groundY;
+
+let playing = false;
+let score = 0;
+let best = Number(localStorage.getItem("dontFallBest")) || 0;
+
+let speed = 4.2;
+let spawnTimer = 0;
+
+let obstacles = [];
+
+const player = {
+  x:0,
+  y:0,
+  width:30,
+  height:42,
+  velocityY:0,
+  onGround:true
+};
+
+bestText.textContent = best;
+
+
+/* RESIZE */
+
+function resize(){
+
+  const ratio = window.devicePixelRatio || 1;
+
+  W = canvas.clientWidth;
+  H = canvas.clientHeight;
+
+  canvas.width = W * ratio;
+  canvas.height = H * ratio;
+
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+
+  groundY = H * 0.78;
+
+  player.x = W * 0.20;
+
+  if(!playing){
+    player.y = groundY - player.height;
+  }
+}
+
+window.addEventListener("resize",resize);
+
+resize();
+
+
+/* START */
+
+function startGame(){
+
+  playing = true;
+
+  score = 0;
+  speed = 4.2;
+  spawnTimer = 50;
+
+  obstacles = [];
+
+  player.y = groundY - player.height;
+  player.velocityY = 0;
+  player.onGround = true;
+
+  overlay.style.display = "none";
+  tip.style.display = "block";
+
+  requestAnimationFrame(gameLoop);
+}
+
+
+/* JUMP */
+
+function jump(){
+
+  if(!playing){
+    startGame();
+    return;
+  }
+
+  if(player.onGround){
+
+    player.velocityY = -12.5;
+    player.onGround = false;
+
+    tip.style.display = "none";
+  }
+}
+
+
+/* GAME OVER */
+
+function gameOver(){
+
+  playing = false;
+
+  const current = Math.floor(score);
+
+  if(current > best){
+
+    best = current;
+
+    localStorage.setItem(
+      "dontFallBest",
+      best
+    );
+
+  }
+
+  bestText.textContent = best;
+
+  finalScore.textContent =
+    "Score: " + current;
+
+  overlay.style.display = "flex";
+}
+
+
+/* CREATE OBSTACLE */
+
+function createObstacle(){
+
+  const height =
+    25 + Math.random() * 40;
+
+  const width =
+    18 + Math.random() * 20;
+
+  obstacles.push({
+
+    x:W + 30,
+
+    y:groundY - height,
+
+    width:width,
+
+    height:height
+
+  });
+
+}
+
+
+/* COLLISION */
+
+function collision(a,b){
+
+  return (
+
+    a.x + 5 < b.x + b.width - 3 &&
+
+    a.x + a.width - 5 > b.x + 3 &&
+
+    a.y + 5 < b.y + b.height &&
+
+    a.y + a.height > b.y + 3
+
+  );
+
+}
+
+
+/* BACKGROUND */
+
+function drawBackground(time){
+
+  const gradient =
+    ctx.createLinearGradient(
+      0,0,0,H
+    );
+
+  gradient.addColorStop(
+    0,
+    "#11152a"
+  );
+
+  gradient.addColorStop(
+    1,
+    "#050609"
+  );
+
+  ctx.fillStyle = gradient;
+
+  ctx.fillRect(
+    0,
+    0,
+    W,
+    H
+  );
+
+
+  /* Background lines */
+
+  ctx.fillStyle =
+    "rgba(255,255,255,.035)";
+
+  for(let i=0;i<20;i++){
+
+    let x =
+      (i*100 - time*.02) % W;
+
+    if(x < 0) x += W;
+
+    ctx.fillRect(
+      x,
+      0,
+      1,
+      H*.65
+    );
+  }
+
+
+  /* Ground */
+
+  ctx.fillStyle="#10131b";
+
+  ctx.fillRect(
+    0,
+    groundY,
+    W,
+    H-groundY
+  );
+
+
+  /* Ground line */
+
+  ctx.strokeStyle =
+    "rgba(255,255,255,.12)";
+
+  ctx.lineWidth=2;
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    0,
+    groundY
+  );
+
+  ctx.lineTo(
+    W,
+    groundY
+  );
+
+  ctx.stroke();
+
+
+  /* Ground details */
+
+  for(
+    let x=-(time*.12%60);
+    x<W;
+    x+=60
+  ){
+
+    ctx.fillStyle =
+      "rgba(255,255,255,.035)";
+
+    ctx.fillRect(
+      x,
+      groundY+18,
+      30,
+      2
+    );
+  }
+
+}
+
+
+/* PLAYER */
+
+function drawPlayer(){
+
+  /* shadow */
+
+  ctx.fillStyle =
+    "rgba(0,0,0,.4)";
+
+  ctx.beginPath();
+
+  ctx.ellipse(
+    player.x+15,
+    groundY+4,
+    22,
+    5,
+    0,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* body */
+
+  ctx.fillStyle="#ffffff";
+
+  ctx.beginPath();
+
+  ctx.roundRect(
+    player.x,
+    player.y,
+    player.width,
+    player.height,
+    9
+  );
+
+  ctx.fill();
+
+
+  /* eyes */
+
+  ctx.fillStyle="#11131a";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    player.x+10,
+    player.y+13,
+    3,
+    0,
+    Math.PI*2
+  );
+
+  ctx.arc(
+    player.x+21,
+    player.y+13,
+    3,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* smile */
+
+  ctx.strokeStyle="#11131a";
+
+  ctx.lineWidth=2;
+
+  ctx.beginPath();
+
+  ctx.arc(
+    player.x+15,
+    player.y+20,
+    6,
+    0,
+    Math.PI
+  );
+
+  ctx.stroke();
+
+}
+
+
+/* OBSTACLE */
+
+function drawObstacle(o){
+
+  ctx.fillStyle="#c5c9d4";
+
+  ctx.beginPath();
+
+  ctx.roundRect(
+    o.x,
+    o.y,
+    o.width,
+    o.height,
+    5
+  );
+
+  ctx.fill();
+
+
+  /* spike */
+
+  ctx.fillStyle="#777d8c";
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    o.x,
+    o.y
+  );
+
+  ctx.lineTo(
+    o.x + o.width/2,
+    o.y - 9
+  );
+
+  ctx.lineTo(
+    o.x + o.width,
+    o.y
+  );
+
+  ctx.fill();
+
+}
+
+
+/* GAME LOOP */
+
+function gameLoop(time){
+
+  if(!playing) return;
+
+
+  drawBackground(time);
+
+
+  /* Increase difficulty */
+
+  speed =
+    Math.min(
+      9,
+      4.2 + score/450
+    );
+
+
+  score += 0.08;
+
+  scoreText.textContent =
+    Math.floor(score);
+
+
+  /* Player physics */
+
+  player.velocityY += 0.62;
+
+  player.y += player.velocityY;
+
+
+  if(
+    player.y + player.height >= groundY
+  ){
+
+    player.y =
+      groundY - player.height;
+
+    player.velocityY = 0;
+
+    player.onGround = true;
+
+  }
+
+
+  /* Spawn */
+
+  spawnTimer--;
+
+  if(spawnTimer <= 0){
+
+    createObstacle();
+
+    spawnTimer =
+      55 +
+      Math.random()*60 -
+      speed*2;
+
+  }
+
+
+  /* Obstacles */
+
+  for(
+    let i=obstacles.length-1;
+    i>=0;
+    i--
+  ){
+
+    const obstacle =
+      obstacles[i];
+
+    obstacle.x -= speed;
+
+    drawObstacle(obstacle);
+
+
+    if(
+      collision(
+        player,
+        obstacle
+      )
+    ){
+
+      gameOver();
+
+      return;
+
+    }
+
+
+    if(
+      obstacle.x +
+      obstacle.width <
+      0
+    ){
+
+      obstacles.splice(i,1);
+
+    }
+
+  }
+
+
+  drawPlayer();
+
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+
+/* CONTROLS */
+
+window.addEventListener(
+  "pointerdown",
+  function(e){
+
+    if(
+      e.target.closest("button")
+    ) return;
+
+    jump();
+
+  }
+);
+
+
+window.addEventListener(
+  "keydown",
+  function(e){
+
+    if(
+      e.code === "Space" ||
+      e.code === "ArrowUp"
+    ){
+
+      e.preventDefault();
+
+      jump();
+
+    }
+
+  }
+);
+
+
+document
+.getElementById("restart")
+.addEventListener(
+  "click",
+  startGame
+);
+
+
+/* START */
+
+startGame();
+
+</script>
+
+</body>
+</html>
